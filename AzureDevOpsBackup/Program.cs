@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using RestSharp;
 using RestSharp.Extensions;
+using System.Diagnostics;
+
 namespace AzureDevOpsBackup
 {
     struct Project
@@ -20,7 +22,9 @@ namespace AzureDevOpsBackup
     {
         public string id;
         public string name;
-    }
+		public string remoteUrl;
+
+	}
     struct Repos
     {
         public List<Repo> value;
@@ -46,8 +50,9 @@ namespace AzureDevOpsBackup
             string[] requiredArgs = { "--token", "--organization", "--outdir" };
             if (args.Intersect(requiredArgs).Count() == 3)
             {
-                const string version = "api-version=5.1-preview.1";
-                string auth = "Basic " + Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(string.Format("{0}:{1}", "", args[Array.IndexOf(args, "--token") + 1])));
+				const string version = "api-version=5.1";//"api-version=5.1-preview.1";
+				var base64EncodedPat = Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(string.Format("{0}:{1}", "", args[Array.IndexOf(args, "--token") + 1])));
+				string auth = "Basic " + base64EncodedPat;
                 string baseURL = "https://dev.azure.com/" + args[Array.IndexOf(args, "--organization") + 1] + "/";
                 string outDir = args[Array.IndexOf(args, "--outdir") + 1] + "\\";
                 var clientProjects = new RestClient(baseURL + "_apis/projects?" + version);
@@ -63,36 +68,107 @@ namespace AzureDevOpsBackup
                     requestRepos.AddHeader("Authorization", auth);
                     IRestResponse responseRepos = clientRepos.Execute(requestRepos);
                     Repos repos = JsonConvert.DeserializeObject<Repos>(responseRepos.Content);
-                    foreach (Repo repo in repos.value)
-                    {
-                        Console.Write("\n\t" + repo.name);
-                        var clientItems = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/items?recursionlevel=full&" + version);
-                        var requestItems = new RestRequest(Method.GET);
-                        requestItems.AddHeader("Authorization", auth);
-                        IRestResponse responseItems = clientItems.Execute(requestItems);
-                        Items items = JsonConvert.DeserializeObject<Items>(responseItems.Content);
-                        Console.Write(" - " + items.count + "\n");
-                        if (items.count > 0)
-                        {
-                            var clientBlob = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/blobs?" + version);
-                            var requestBlob = new RestRequest(Method.POST);
-                            requestBlob.AddJsonBody(items.value.Where(itm => itm.gitObjectType == "blob").Select(itm => itm.objectId).ToList());
-                            requestBlob.AddHeader("Authorization", auth);
-                            requestBlob.AddHeader("Accept", "application/zip");
-                            clientBlob.DownloadData(requestBlob).SaveAs(outDir + project.name + "_" + repo.name + "_blob.zip");
-                            File.WriteAllText(outDir + project.name + "_" + repo.name + "_tree.json", responseItems.Content);
-                            if (Array.Exists(args, argument => argument == "--unzip"))
-                            {
-                                if (Directory.Exists(outDir + project.name + "_" + repo.name)) Directory.Delete(outDir + project.name + "_" + repo.name, true);
-                                Directory.CreateDirectory(outDir + project.name + "_" + repo.name);
-                                ZipArchive archive = ZipFile.OpenRead(outDir + project.name + "_" + repo.name + "_blob.zip");
-                                foreach (Item item in items.value)
-                                    if (item.isFolder) Directory.CreateDirectory(outDir + project.name + "_" + repo.name + item.path);
-                                    else archive.GetEntry(item.objectId).ExtractToFile(outDir + project.name + "_" + repo.name + item.path, true);
-                            }
-                        }
-                    }
-                }
+     //               foreach (Repo repo in repos.value)
+     //               {
+     //                   Console.Write("\n\t" + repo.name);
+     //                   var clientItems = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/items?recursionlevel=full&" + version);
+     //                   var requestItems = new RestRequest(Method.GET);
+     //                   requestItems.AddHeader("Authorization", auth);
+     //                   IRestResponse responseItems = clientItems.Execute(requestItems);
+     //                   Items items = JsonConvert.DeserializeObject<Items>(responseItems.Content);
+     //                   Console.Write(" - " + items.count + "\n");
+     //                   if (items.count > 0)
+     //                   {
+     //                       var clientBlob = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/blobs?" + version);
+     //                       var requestBlob = new RestRequest(Method.POST);
+     //                       requestBlob.AddJsonBody(items.value.Where(itm => itm.gitObjectType == "blob").Select(itm => itm.objectId).ToList());
+     //                       requestBlob.AddHeader("Authorization", auth);
+     //                       requestBlob.AddHeader("Accept", "application/zip");
+     //                       clientBlob.DownloadData(requestBlob).SaveAs(outDir + project.name + "_" + repo.name + "_blob.zip");
+     //                       File.WriteAllText(outDir + project.name + "_" + repo.name + "_tree.json", responseItems.Content);
+     //                       if (Array.Exists(args, argument => argument == "--unzip"))
+     //                       {
+     //                           if (Directory.Exists(outDir + project.name + "_" + repo.name)) Directory.Delete(outDir + project.name + "_" + repo.name, true);
+     //                           Directory.CreateDirectory(outDir + project.name + "_" + repo.name);
+     //                           ZipArchive archive = ZipFile.OpenRead(outDir + project.name + "_" + repo.name + "_blob.zip");
+     //                           foreach (Item item in items.value)
+     //                               if (item.isFolder) Directory.CreateDirectory(outDir + project.name + "_" + repo.name + item.path);
+     //                               else archive.GetEntry(item.objectId).ExtractToFile(outDir + project.name + "_" + repo.name + item.path, true);
+     //                       }
+					//	}
+					//}
+
+					// Clone repos
+					// TODO: Test if git installed
+					if (Array.Exists(args, argument => argument == "--clone"))
+					{
+						// Create clone dir
+						var cloneDir = outDir + "_cloned";
+						if (!Directory.Exists(cloneDir))
+						{
+							Directory.CreateDirectory(cloneDir);
+						}
+
+						// Clone all git repos
+						var gitCloneCmdFmtStr = "git -c http.extraheader=\"AUTHORIZATION: Basic {0}\" clone \"{1}\" \"{2}\"";
+						foreach (var repo in repos.value)
+						{
+							// Create dir for repo
+							var repoDir = cloneDir + "\\" + repo.name;
+							if (!Directory.Exists(repoDir))
+							{
+								Directory.CreateDirectory(repoDir);
+							}
+
+							// Clone repo into its dir
+							var gitCloneCmd = string.Format(gitCloneCmdFmtStr, base64EncodedPat, repo.remoteUrl, repoDir);
+							Console.WriteLine("\t{0}", gitCloneCmd);
+							var gitProcess = new Process();
+							try
+							{
+								// Setup process start info
+								var gitProcessStartInfo = new ProcessStartInfo();
+								gitProcessStartInfo.CreateNoWindow = true;
+								gitProcessStartInfo.UseShellExecute = false;
+								gitProcessStartInfo.RedirectStandardError = true;
+								gitProcessStartInfo.RedirectStandardOutput = true;
+								gitProcessStartInfo.FileName = "cmd.exe";
+								gitProcessStartInfo.Arguments = "/c " + gitCloneCmd;
+								gitProcessStartInfo.WorkingDirectory = cloneDir;
+
+								// Start git process
+								gitProcess.StartInfo = gitProcessStartInfo;
+								gitProcess.Start();
+								var stderr = gitProcess.StandardError.ReadToEnd();
+								var stdout = gitProcess.StandardOutput.ReadToEnd();
+								gitProcess.WaitForExit();
+								gitProcess.Close();
+
+								// Handle out
+								if (!string.IsNullOrWhiteSpace(stderr))
+								{
+									Console.WriteLine(stderr);
+								}
+								if (!string.IsNullOrWhiteSpace(stdout))
+								{
+									Console.WriteLine(stdout);
+								}
+							}
+							catch (Exception ex)
+							{
+								Console.WriteLine(ex.Message);
+							}
+							finally
+							{
+								if (gitProcess != null)
+								{
+									gitProcess.Dispose();
+									gitProcess = null;
+								}
+							}
+						}
+					}
+				}
             }
         }
     }
