@@ -1,3 +1,5 @@
+FORKED SO I COULD HAVE A STALE COPY:
+
 # Introduction
 Azure DevOps — formerly Visual Studio Team Services — is a cloud service to manage source code and collaborate between development teams. It integrates perfectly with both Visual Studio and Visual Studio Code. While the code is perfectly safe on Azure infrastructure, there are cases where a centralized local backup of all projects and repositories is needed. These might include Corporate Policies, Disaster Recovery and Business Continuity Plans. We can download a repository from Azure DevOps as a Zip file, but this may not be practical if we have a considerable amount of projects and repositories and need them backed up on a regular basis. To do this, we can use the Azure DevOps API, as explained in the next steps.
 
