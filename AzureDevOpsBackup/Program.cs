@@ -124,16 +124,17 @@ namespace AzureDevOpsBackup
 							var gitCloneCmd = string.Format(gitCloneCmdFmtStr, base64EncodedPat, repo.remoteUrl, repoDir);
 							Console.WriteLine("\t{0}", gitCloneCmd);
 							var gitProcess = new Process();
+							var gitSyncProcess = new Process();
 							try
 							{
-								// Setup process start info
+								// Setup process start info for clone
 								var gitProcessStartInfo = new ProcessStartInfo();
 								gitProcessStartInfo.CreateNoWindow = true;
 								gitProcessStartInfo.UseShellExecute = false;
 								gitProcessStartInfo.RedirectStandardError = true;
 								gitProcessStartInfo.RedirectStandardOutput = true;
 								gitProcessStartInfo.FileName = "cmd.exe";
-								gitProcessStartInfo.Arguments = "/c " + gitCloneCmd;
+								gitProcessStartInfo.Arguments = "/c " + gitCloneCmd + " && git fetch --all && git pull";
 								gitProcessStartInfo.WorkingDirectory = cloneDir;
 
 								// Start git process
@@ -153,6 +154,34 @@ namespace AzureDevOpsBackup
 								{
 									Console.WriteLine(stdout);
 								}
+
+								// Setup process start info for fetch and pull
+								var gitSyncProcessStartInfo = new ProcessStartInfo();
+								gitSyncProcessStartInfo.CreateNoWindow = true;
+								gitSyncProcessStartInfo.UseShellExecute = false;
+								gitSyncProcessStartInfo.RedirectStandardError = true;
+								gitSyncProcessStartInfo.RedirectStandardOutput = true;
+								gitSyncProcessStartInfo.FileName = "cmd.exe";
+								gitSyncProcessStartInfo.Arguments = "/c \"git fetch --all && git pull --all\"";
+								gitSyncProcessStartInfo.WorkingDirectory = repoDir;
+
+								// Start git process
+								gitSyncProcess.StartInfo = gitSyncProcessStartInfo;
+								gitSyncProcess.Start();
+								var stderrSync = gitSyncProcess.StandardError.ReadToEnd();
+								var stdoutSync = gitSyncProcess.StandardOutput.ReadToEnd();
+								gitSyncProcess.WaitForExit();
+								gitSyncProcess.Close();
+
+								// Handle out
+								if (!string.IsNullOrWhiteSpace(stderrSync))
+								{
+									Console.WriteLine(stderrSync);
+								}
+								if (!string.IsNullOrWhiteSpace(stdoutSync))
+								{
+									Console.WriteLine(stdoutSync);
+								}
 							}
 							catch (Exception ex)
 							{
@@ -164,6 +193,11 @@ namespace AzureDevOpsBackup
 								{
 									gitProcess.Dispose();
 									gitProcess = null;
+								}
+								if (gitSyncProcess != null)
+								{
+									gitSyncProcess.Dispose();
+									gitSyncProcess = null;
 								}
 							}
 						}
