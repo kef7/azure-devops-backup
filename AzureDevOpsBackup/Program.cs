@@ -57,6 +57,12 @@ namespace AzureDevOpsBackup
 	{
 		static void Main(string[] args)
 		{
+			// Debug wait/sleep period - time to get debugger attached (avoid putting debug CLI args into project properties)
+			if (Array.Exists(args, argument => argument == "--debug-wait"))
+			{
+				System.Threading.Thread.Sleep(5000);
+			}
+
 			string[] requiredArgs = { "--token", "--organization", "--outdir" };
 			if (args.Intersect(requiredArgs).Count() == 3)
 			{
@@ -78,38 +84,37 @@ namespace AzureDevOpsBackup
 					requestRepos.AddHeader("Authorization", auth);
 					IRestResponse responseRepos = clientRepos.Execute(requestRepos);
 					Repos repos = JsonConvert.DeserializeObject<Repos>(responseRepos.Content);
-					//               foreach (Repo repo in repos.value)
-					//               {
-					//                   Console.Write("\n\t" + repo.name);
-					//                   var clientItems = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/items?recursionlevel=full&" + version);
-					//                   var requestItems = new RestRequest(Method.GET);
-					//                   requestItems.AddHeader("Authorization", auth);
-					//                   IRestResponse responseItems = clientItems.Execute(requestItems);
-					//                   Items items = JsonConvert.DeserializeObject<Items>(responseItems.Content);
-					//                   Console.Write(" - " + items.count + "\n");
-					//                   if (items.count > 0)
-					//                   {
-					//                       var clientBlob = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/blobs?" + version);
-					//                       var requestBlob = new RestRequest(Method.POST);
-					//                       requestBlob.AddJsonBody(items.value.Where(itm => itm.gitObjectType == "blob").Select(itm => itm.objectId).ToList());
-					//                       requestBlob.AddHeader("Authorization", auth);
-					//                       requestBlob.AddHeader("Accept", "application/zip");
-					//                       clientBlob.DownloadData(requestBlob).SaveAs(outDir + project.name + "_" + repo.name + "_blob.zip");
-					//                       File.WriteAllText(outDir + project.name + "_" + repo.name + "_tree.json", responseItems.Content);
-					//                       if (Array.Exists(args, argument => argument == "--unzip"))
-					//                       {
-					//                           if (Directory.Exists(outDir + project.name + "_" + repo.name)) Directory.Delete(outDir + project.name + "_" + repo.name, true);
-					//                           Directory.CreateDirectory(outDir + project.name + "_" + repo.name);
-					//                           ZipArchive archive = ZipFile.OpenRead(outDir + project.name + "_" + repo.name + "_blob.zip");
-					//                           foreach (Item item in items.value)
-					//                               if (item.isFolder) Directory.CreateDirectory(outDir + project.name + "_" + repo.name + item.path);
-					//                               else archive.GetEntry(item.objectId).ExtractToFile(outDir + project.name + "_" + repo.name + item.path, true);
-					//                       }
-					//	}
-					//}
+					foreach (Repo repo in repos.value)
+					{
+						Console.Write("\n\t" + repo.name);
+						var clientItems = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/items?recursionlevel=full&" + version);
+						var requestItems = new RestRequest(Method.GET);
+						requestItems.AddHeader("Authorization", auth);
+						IRestResponse responseItems = clientItems.Execute(requestItems);
+						Items items = JsonConvert.DeserializeObject<Items>(responseItems.Content);
+						Console.Write(" - " + items.count + "\n");
+						if (items.count > 0)
+						{
+							var clientBlob = new RestClient(baseURL + "_apis/git/repositories/" + repo.id + "/blobs?" + version);
+							var requestBlob = new RestRequest(Method.POST);
+							requestBlob.AddJsonBody(items.value.Where(itm => itm.gitObjectType == "blob").Select(itm => itm.objectId).ToList());
+							requestBlob.AddHeader("Authorization", auth);
+							requestBlob.AddHeader("Accept", "application/zip");
+							clientBlob.DownloadData(requestBlob).SaveAs(outDir + project.name + "_" + repo.name + "_blob.zip");
+							File.WriteAllText(outDir + project.name + "_" + repo.name + "_tree.json", responseItems.Content);
+							if (Array.Exists(args, argument => argument == "--unzip"))
+							{
+								if (Directory.Exists(outDir + project.name + "_" + repo.name)) Directory.Delete(outDir + project.name + "_" + repo.name, true);
+								Directory.CreateDirectory(outDir + project.name + "_" + repo.name);
+								ZipArchive archive = ZipFile.OpenRead(outDir + project.name + "_" + repo.name + "_blob.zip");
+								foreach (Item item in items.value)
+									if (item.isFolder) Directory.CreateDirectory(outDir + project.name + "_" + repo.name + item.path);
+									else archive.GetEntry(item.objectId).ExtractToFile(outDir + project.name + "_" + repo.name + item.path, true);
+							}
+						}
+					}
 
 					// Clone repos
-					// TODO: Test if git installed
 					if (Array.Exists(args, argument => argument == "--clone"))
 					{
 						// Create clone dir
@@ -165,62 +170,67 @@ namespace AzureDevOpsBackup
 								}
 
 								// Get all branches
-								var gitSyncProcess = new Process();
-								try
+								/*
+								https://dev.azure.com/kef7/WGU/_apis/git/repositories/C777_Examples/refs?includeLinks=true&includeStatuses=false&includeMyBranches=true&latestStatusesOnly=false&peelTags=false&api-version=4.1
+								*/
+								var clientRepoBranches = new RestClient(baseURL + project.name + "/_apis/git/repositories/" + repo.name + "/refs?includeLinks=true&includeStatuses=false&includeMyBranches=true&latestStatusesOnly=false&peelTags=false" + version);
+								var requestRepoBranches = new RestRequest(Method.GET);
+								requestRepoBranches.AddHeader("Authorization", auth);
+								IRestResponse responseRepoBranches = clientRepoBranches.Execute(requestRepoBranches);
+								var repoBranches = JsonConvert.DeserializeObject<Branchs>(responseRepoBranches.Content);
+								foreach (var branch in repoBranches.value)
 								{
-									/*
-									https://dev.azure.com/kef7/WGU/_apis/git/repositories/C777_Examples/refs?includeLinks=true&includeStatuses=false&includeMyBranches=true&latestStatusesOnly=false&peelTags=false&api-version=4.1
-									*/
-									var clientRepoBranches = new RestClient(baseURL + project.name + "/_apis/git/repositories/" + repo.name + "/refs?includeLinks=true&includeStatuses=false&includeMyBranches=true&latestStatusesOnly=false&peelTags=false" + version);
-									var requestRepoBranches = new RestRequest(Method.GET);
-									requestRepoBranches.AddHeader("Authorization", auth);
-									IRestResponse responseRepoBranches = clientRepoBranches.Execute(requestRepoBranches);
-									var repoBranches = JsonConvert.DeserializeObject<Branchs>(responseRepoBranches.Content);
-									foreach (var branch in repoBranches.value)
+									var gitSyncProcess = new Process();
+									try
 									{
+										// Parse branch name
 										var branchName = branch.name.Replace("refs/heads/", "");
 
-										// Setup process start info for fetch and pull
-										var gitSyncProcessStartInfo = new ProcessStartInfo();
-										gitSyncProcessStartInfo.CreateNoWindow = true;
-										gitSyncProcessStartInfo.UseShellExecute = false;
-										gitSyncProcessStartInfo.RedirectStandardError = true;
-										gitSyncProcessStartInfo.RedirectStandardOutput = true;
-										gitSyncProcessStartInfo.FileName = "cmd.exe";
-										gitSyncProcessStartInfo.Arguments = string.Format("/c \"git fetch {0} && git checkout {0}\"", branchName);
-										gitSyncProcessStartInfo.WorkingDirectory = repoDir;
-
-										// Start git process
-										gitSyncProcess.StartInfo = gitSyncProcessStartInfo;
-										gitSyncProcess.Start();
-										var stderrSync = gitSyncProcess.StandardError.ReadToEnd();
-										var stdoutSync = gitSyncProcess.StandardOutput.ReadToEnd();
-										gitSyncProcess.WaitForExit();
-										gitSyncProcess.Close();
-
-										// Handle out
-										if (!string.IsNullOrWhiteSpace(stderrSync))
+										// Fetch branch; skip master
+										if (!branchName.Equals("master"))
 										{
-											Console.WriteLine(stderrSync);
-										}
-										if (!string.IsNullOrWhiteSpace(stdoutSync))
-										{
-											Console.WriteLine(stdoutSync);
+											// Setup process start info for fetch and pull
+											var gitSyncProcessStartInfo = new ProcessStartInfo();
+											gitSyncProcessStartInfo.CreateNoWindow = true;
+											gitSyncProcessStartInfo.UseShellExecute = false;
+											gitSyncProcessStartInfo.RedirectStandardError = true;
+											gitSyncProcessStartInfo.RedirectStandardOutput = true;
+											gitSyncProcessStartInfo.FileName = "cmd.exe";
+											gitSyncProcessStartInfo.Arguments = string.Format("/c \"git fetch origin {0} && git checkout {0}\"", branchName);
+											gitSyncProcessStartInfo.WorkingDirectory = repoDir;
+
+											// Start git process
+											gitSyncProcess.StartInfo = gitSyncProcessStartInfo;
+											gitSyncProcess.Start();
+											var stderrSync = gitSyncProcess.StandardError.ReadToEnd();
+											var stdoutSync = gitSyncProcess.StandardOutput.ReadToEnd();
+											gitSyncProcess.WaitForExit();
+											gitSyncProcess.Close();
+
+											// Handle out
+											if (!string.IsNullOrWhiteSpace(stderrSync))
+											{
+												Console.WriteLine(stderrSync);
+											}
+											if (!string.IsNullOrWhiteSpace(stdoutSync))
+											{
+												Console.WriteLine(stdoutSync);
+											}
 										}
 									}
-								}
-								catch (Exception ex)
-								{
-									Console.WriteLine(ex.Message);
-								}
-								finally
-								{
-									if (gitSyncProcess != null)
+									catch (Exception ex)
 									{
-										gitSyncProcess.Dispose();
-										gitSyncProcess = null;
+										Console.WriteLine(ex.Message);
 									}
-								}
+									finally
+									{
+										if (gitSyncProcess != null)
+										{
+											gitSyncProcess.Dispose();
+											gitSyncProcess = null;
+										}
+									}
+								} // END for() - fetch branch
 							}
 							catch (Exception ex)
 							{
@@ -234,7 +244,7 @@ namespace AzureDevOpsBackup
 									gitProcess = null;
 								}
 							}
-						}
+						} // END for() - clone repo
 					}
 				}
 			}
